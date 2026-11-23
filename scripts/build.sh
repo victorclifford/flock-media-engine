@@ -50,7 +50,9 @@ cd "$WORK"
 # 2. Flock's changes to the source (the only ones; LGPL asks that they're public, and they are):
 #    Windows file properties and icon for flock-media.exe.
 if [ "$TARGET" = "windows-x64" ]; then
+  # The resource compiler looks for the icon from where the build runs, so it's in both places.
   cp "$ROOT/branding/flock-media.ico" fftools/flock-media.ico
+  cp "$ROOT/branding/flock-media.ico" flock-media.ico
   IFS=. read -r MA MI PA <<< "$ENGINE_VERSION"
   cat >> fftools/fftoolsres.rc <<RC
 
@@ -97,21 +99,32 @@ case "$TARGET" in
   macos-arm64|macos-x64)
     ARCH="${TARGET#macos-}"; [ "$ARCH" = "x64" ] && ARCH="x86_64"
     MAC_FLAGS="-arch $ARCH -mmacosx-version-min=12.0"
-    FLAGS+=(--cc=clang --arch="$ARCH" --extra-cflags="$MAC_FLAGS" --extra-ldflags="$MAC_FLAGS")
+    FLAGS+=(--enable-pthreads --cc=clang --arch="$ARCH" --extra-cflags="$MAC_FLAGS" --extra-ldflags="$MAC_FLAGS")
     [ "$(uname -m)" = "$ARCH" ] || [ "$(uname -m)/$ARCH" = "arm64/arm64" ] || FLAGS+=(--enable-cross-compile --target-os=darwin)
     EXE="flock-media" ;;
   windows-x64)
-    FLAGS+=(--target-os=mingw32 --arch=x86_64 --cross-prefix=x86_64-w64-mingw32- --enable-cross-compile --extra-ldflags=-static)
+    FLAGS+=(--enable-w32threads --target-os=mingw32 --arch=x86_64 --cross-prefix=x86_64-w64-mingw32- --enable-cross-compile --extra-ldflags=-static)
     EXE="flock-media.exe" ;;
   *) echo "unknown target $TARGET" >&2; exit 1 ;;
 esac
 
-./configure "${FLAGS[@]}" > configure.log 2>&1 || { tail -40 configure.log >&2; exit 1; }
-make -j"$JOBS" ffmpeg > make.log 2>&1 || { tail -40 make.log >&2; exit 1; }
+# A failed step prints its last lines; on GitHub Actions also as a public annotation (job logs
+# are only visible to the repository's admins).
+fail() { # log step
+  tail -40 "$1" >&2
+  if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+    echo "::error title=$TARGET: $2 failed::$(tail -15 "$1" | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
+  fi
+  exit 1
+}
+./configure "${FLAGS[@]}" > configure.log 2>&1 || fail configure.log configure
+# The program's make target carries the platform's suffix (ffmpeg.exe on Windows).
+SUFFIX=$([ "$TARGET" = windows-x64 ] && echo .exe || true)
+make -j"$JOBS" "ffmpeg$SUFFIX" > make.log 2>&1 || fail make.log build
 
 # 4. Out: the engine, signed on macOS (the free "ad-hoc" signature every Apple silicon program
 #    needs to run; the app's real signature replaces it once Flock has an Apple developer account).
-cp "ffmpeg$( [ "$TARGET" = windows-x64 ] && echo .exe )" "$OUT/$EXE"
+cp "ffmpeg$SUFFIX" "$OUT/$EXE"
 case "$TARGET" in
   macos-*) strip "$OUT/$EXE"; codesign --force -s - -i cc.flocks.media "$OUT/$EXE" ;;
   windows-x64) x86_64-w64-mingw32-strip "$OUT/$EXE" ;;

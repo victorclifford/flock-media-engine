@@ -29,10 +29,43 @@ def top_boxes(path):
             f.seek(size - 8, 1)
     return order
 
+def timed(argv):
+    """Runs a command; returns (wall seconds, CPU seconds or None where the OS can't say)."""
+    import subprocess, time
+    try:
+        import resource
+        before = resource.getrusage(resource.RUSAGE_CHILDREN)
+    except ImportError:  # Windows
+        resource = None
+    t = time.time()
+    subprocess.run(argv, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    wall = time.time() - t
+    if resource is None:
+        return wall, None
+    after = resource.getrusage(resource.RUSAGE_CHILDREN)
+    return wall, (after.ru_utime - before.ru_utime) + (after.ru_stime - before.ru_stime)
+
 cmd = sys.argv[1]
+if cmd == "speed":  # speed OURS REF INPUT: 5 alternating runs each, median wall and CPU time
+    import statistics
+    ours, ref, src = sys.argv[2], sys.argv[3], sys.argv[4]
+    runs = {"ours": [], "ref": []}
+    for i in range(5):
+        order = (("ours", ours), ("ref", ref)) if i % 2 == 0 else (("ref", ref), ("ours", ours))
+        for who, binary in order:
+            runs[who].append(timed([binary, "-hide_banner", "-loglevel", "error", "-y", "-i", src, "-map", "0", "-c", "copy", "-movflags", "+faststart", f"speed_{who}.mp4"]))
+    med = lambda who, i: statistics.median(r[i] for r in runs[who]) if runs[who][0][i] is not None else None
+    ow, rw, oc, rc = med("ours", 0), med("ref", 0), med("ours", 1), med("ref", 1)
+    # Medians, since a single run on a busy or throttling machine varies by a third either way.
+    # CPU time is the fair measure (disk timing varies); wall time must be close too.
+    ok = (oc <= rc * 1.10 + 0.05 if oc is not None else True) and ow <= rw * 1.15 + 0.3
+    detail = (f"median CPU ours {oc:.2f}s, reference {rc:.2f}s; " if oc is not None else "") + f"median wall ours {ow:.2f}s, reference {rw:.2f}s"
+    print(("PASS" if ok else "FAIL") + "|" + detail)
+    sys.exit(0)
+
 if cmd == "same":  # two framemd5 files: identical packets (data and timing)?
     a, b = packets(sys.argv[2]), packets(sys.argv[3])
-    print(json.dumps({"same": a == b, "a": len(a), "b": len(b)}))
+    print(json.dumps({"same": bool(a) and a == b, "a": len(a), "b": len(b)}))  # nothing isn't "the same"
 elif cmd == "count":
     print(len(packets(sys.argv[2])))
 elif cmd == "faststart":  # moov before mdat?
