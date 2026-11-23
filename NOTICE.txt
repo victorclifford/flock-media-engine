@@ -1,0 +1,8 @@
+Flock Media Engine
+Copyright (c) Flock Systems Limited (build scripts and tests)
+
+This software is FFmpeg (https://ffmpeg.org), built from the unmodified official source except
+for Windows file details and icon (see scripts/build.sh), licensed under the GNU Lesser General
+Public License version 2.1 or later. The source code used for each build is the official FFmpeg
+release named in that build's BUILDINFO.txt, together with this repository's build script.
+FFmpeg is a trademark of Fabrice Bellard, originator of the FFmpeg project.
