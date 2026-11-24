@@ -22,11 +22,17 @@ env:
 jobs:
   macos:
     name: macOS (${{ matrix.target }})
-    runs-on: macos-15 # Apple silicon; the Intel build is tested under Rosetta
+    # Each build on its own kind of Mac, so its tests (speed included) run natively against a
+    # native reference FFmpeg. (Under Rosetta the Intel build would look twice as slow.)
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        target: [macos-arm64, macos-x64]
+        include:
+          - target: macos-arm64
+            runner: macos-14 # Apple silicon
+          - target: macos-x64
+            runner: macos-15-intel # GitHub's Intel Mac image
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Build
@@ -34,8 +40,8 @@ jobs:
       - name: Reference FFmpeg and test server
         run: |
           brew install ffmpeg
-          [ "${{ matrix.target }}" = macos-x64 ] && softwareupdate --install-rosetta --agree-to-license || true
-          curl -sSfL "https://github.com/bluenviron/mediamtx/releases/download/$MEDIAMTX/mediamtx_${MEDIAMTX}_darwin_arm64.tar.gz" | tar xz mediamtx
+          ARCH=$([ "$(uname -m)" = arm64 ] && echo arm64 || echo amd64)
+          curl -sSfL "https://github.com/bluenviron/mediamtx/releases/download/$MEDIAMTX/mediamtx_${MEDIAMTX}_darwin_${ARCH}.tar.gz" | tar xz mediamtx
       - name: Compare with official FFmpeg
         run: tests/compare.sh dist/${{ matrix.target }}/flock-media "$(command -v ffmpeg)" ./mediamtx
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
