@@ -30,7 +30,7 @@ jobs:
       matrix:
         include:
           - target: macos-arm64
-            runner: macos-14 # Apple silicon
+            runner: macos-latest # Apple silicon (the label GitHub keeps on its current image)
           - target: macos-x64
             runner: macos-15-intel # GitHub's Intel Mac image
     steps:
