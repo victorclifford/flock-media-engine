@@ -72,10 +72,10 @@ row "Cut-off recording (power cut): recovers as much as reference" "$([ "$CO" -g
 # (or the other way round) would measure the translator, not the engine.
 arch_of() { file -b "$1" 2>/dev/null | grep -oE "x86_64|arm64" | head -1; }
 if [ "$(uname -s)" = Darwin ] && [ "$(arch_of "$OURS")" != "$(arch_of "$REF")" ]; then
-  row "Speed: finishing 30 minutes of video (median of 5, runs alternate)" PASS "not comparable here: engine $(arch_of "$OURS"), reference $(arch_of "$REF") (one runs translated)"
+  row "Speed: finishing 30 minutes of video (median of 9, runs alternate)" PASS "not comparable here: engine $(arch_of "$OURS"), reference $(arch_of "$REF") (one runs translated)"
 else
   SP=$($PY "$HERE/analyze.py" speed "$OURS" "$REF" long.mp4)
-  row "Speed: finishing 30 minutes of video (median of 5, runs alternate)" "${SP%%|*}" "${SP#*|}"
+  row "Speed: finishing 30 minutes of video (median of 9, runs alternate)" "${SP%%|*}" "${SP#*|}"
 fi
 
 # Same FFmpeg version as the reference: the finished file must be the same, byte for byte.
@@ -123,7 +123,8 @@ for who in ours ref; do
   wait $PUSH
 done
 # The test server rewraps some video packets (it adds stream settings to keyframes), so packets
-# are compared with what the reference delivers through the same server: the same or better.
+# are compared with what the reference delivers through the same server: at least as many intact
+# packets, and at least as many in all (how many arrive in total depends on when the pull stops).
 md5s pulled_ours.mp4 p1.txt; md5s pulled_ref.mp4 p2.txt
 RO=$($PY "$HERE/analyze.py" payload_subset src.txt p1.txt); RR=$($PY "$HERE/analyze.py" payload_subset src.txt p2.txt)
 # If the reference itself delivered nothing (its own problem on this machine), ours is judged on
@@ -131,7 +132,7 @@ RO=$($PY "$HERE/analyze.py" payload_subset src.txt p1.txt); RR=$($PY "$HERE/anal
 OK=$($PY -c "
 import json; o=json.loads('$RO'); r=json.loads('$RR')
 if r['received'] < 200: ok = o['received'] > 600 and o['matched'] >= 0.5 * o['received']
-else: ok = o['received'] >= 0.9*r['received'] and o['received'] > 200 and o['matched']/o['received'] >= r['matched']/max(1,r['received']) - 0.02
+else: ok = o['matched'] >= r['matched'] and o['received'] >= 0.95 * r['received']  # as many intact, as many in all
 print('PASS' if ok else 'FAIL')")
 NOTE=$($PY -c "import json; print(' (the reference delivered nothing here, so ours is judged on its own)' if json.loads('$RR')['received'] < 200 else '')")
 row "Live stream over RTMP: arrives as intact as the reference's" "$OK" "ours $RO, reference $RR$NOTE"
